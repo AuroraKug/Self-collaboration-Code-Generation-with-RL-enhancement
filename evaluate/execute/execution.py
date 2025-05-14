@@ -2,11 +2,21 @@
 # Licensed under the MIT license.
 
 import ctypes
-libgcc_s = ctypes.CDLL('libgcc_s.so.1')
-
+import platform
 from collections import defaultdict
 from concurrent.futures import as_completed, ProcessPoolExecutor
 import logging
+import multiprocessing
+
+# 根据操作系统选择不同的库加载方式
+if platform.system() == 'Darwin':  # macOS
+    try:
+        libgcc_s = ctypes.CDLL('libgcc_s.1.dylib')
+    except OSError:
+        # 如果找不到库文件，我们可以跳过这个依赖
+        pass
+else:  # Linux
+    libgcc_s = ctypes.CDLL('libgcc_s.so.1')
 
 from execute._execution import check_correctness, check_correctness_with_test_cases, check_correctness_T
 
@@ -24,8 +34,8 @@ def evaluate_with_test_code(
 ):
     # logger.info(f'Start evaluation with test code, timeout={timeout}')
     # Check the generated samples against test suites.
-    with ProcessPoolExecutor() as executor:
-
+    ctx = multiprocessing.get_context('spawn')
+    with ProcessPoolExecutor(mp_context=ctx) as executor:
         futures = []
         existed_completion = defaultdict(set)
         results = defaultdict(defaultdict)

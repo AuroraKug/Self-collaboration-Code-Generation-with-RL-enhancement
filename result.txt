@@ -1,0 +1,36 @@
+gpt-3.5-turbo
+humaneval_output.jsonl
+SystemLog: [2025-05-09 11:11:00][execute.execution][INFO] - 164 execution requests are submitted
+pass@1:
+SystemLog: [2025-05-09 11:11:50][evaluation][INFO] - {'pass@1': np.float64(0.8659)}
+SystemLog: [2025-05-09 11:11:50][execute.execution][INFO] - 164 execution requests are submitted
+pass@1 - ET:
+SystemLog: [2025-05-09 11:12:58][evaluation][INFO] - {'pass@1': np.float64(0.7561)}
+
+
+Doubao-1.5-pro-256k
+humaneval_output_Doubao-1.5-pro-256k.jsonl
+SystemLog: [2025-05-09 16:32:46][execute.execution][INFO] - 164 execution requests are submitted
+pass@1:
+SystemLog: [2025-05-09 16:33:26][evaluation][INFO] - {'pass@1': np.float64(0.7805)}
+SystemLog: [2025-05-09 16:33:26][execute.execution][INFO] - 164 execution requests are submitted
+pass@1 - ET:
+SystemLog: [2025-05-09 16:34:09][evaluation][INFO] - {'pass@1': np.float64(0.6768)}
+
+o3-mini
+humaneval_output_o3-mini.jsonl
+SystemLog: [2025-05-09 18:20:11][execute.execution][INFO] - 158 execution requests are submitted
+pass@1:
+SystemLog: [2025-05-09 18:20:45][evaluation][INFO] - {'pass@1': np.float64(0.8924)}
+SystemLog: [2025-05-09 18:20:45][execute.execution][INFO] - 158 execution requests are submitted
+pass@1 - ET:
+SystemLog: [2025-05-09 18:21:22][evaluation][INFO] - {'pass@1': np.float64(0.7785)}
+
+deepseek-v3
+humaneval_output_deepseek-v3.jsonl
+SystemLog: [2025-05-09 18:38:00][execute.execution][INFO] - 164 execution requests are submitted
+pass@1:
+SystemLog: [2025-05-09 18:38:34][evaluation][INFO] - {'pass@1': np.float64(0.9146)}
+SystemLog: [2025-05-09 18:38:34][execute.execution][INFO] - 164 execution requests are submitted
+pass@1 - ET:
+SystemLog: [2025-05-09 18:39:12][evaluation][INFO] - {'pass@1': np.float64(0.811)}
