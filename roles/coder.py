@@ -5,6 +5,7 @@ import copy
 import json
 import argparse
 import tqdm
+import re
 
 from core import interface
 from utils import code_truncate, construct_system_message
@@ -68,3 +69,91 @@ class Coder(object):
                 instruction = INSTRUCTREPORT.format(report=report.strip())
             self.history_message_append(instruction)
             self.history_message_append(INSTRUCTCODE.format(requirement=self.requirement))
+
+    reflection_prompt_template = """
+You are an expert Python code reviewer and corrector. You are given a programming requirement,
+the previous version of the code (if any), the feedback from the last round (if any),
+and the current draft of the Python code.
+Your task is to review the current draft and improve it before it's sent for testing.
+
+Requirement:
+{requirement}
+
+Previous Code (if any):
+```python
+{previous_code}
+```
+
+Feedback from Last Round (e.g., test results or analyst plan):
+{history_feedback}
+
+Current Draft Code:
+```python
+{current_code}
+```
+
+Review Checklist & Correction Guidelines:
+1.  Correctness: Does the code seem to logically address the requirement? Are there any obvious bugs or logical flaws?
+2.  Completeness: Does the code handle edge cases mentioned or implied in the requirement? (e.g., empty inputs, invalid inputs)
+3.  Clarity & Readability: Is the code easy to understand? Are variable names meaningful?
+4.  Efficiency: Are there any obvious inefficient patterns that could be improved without major refactoring? (Avoid premature optimization unless clearly problematic)
+5.  Error Handling: Does the code include basic error handling if appropriate for the requirement?
+6.  Compliance with Feedback: If `history_feedback` indicates previous errors, has the current code addressed them?
+7.  Function Definition: Ensure there is one clearly defined Python function that is the main entry point and its name is easily identifiable.
+
+Based on your review, provide an improved version of the code.
+If you believe the current code is already good and needs no changes, output the original code.
+If you identify issues but cannot fix them, you can try to explain the issue and return the original code, or make a best-effort attempt.
+Output only the Python code block for the improved function. Do not include any other text or explanation outside the code block.
+
+Improved Code:
+```python
+[Insert your improved Python code here]
+```
+"""
+
+    def self_reflect_and_correct(self, requirement, current_code, previous_code, history_feedback):
+        if not current_code or current_code.strip() == "" or current_code == "error":
+            return current_code
+
+        reflection_system_message = {"role": "system", "content": "You are an expert Python code reviewer and corrector."}
+        
+        reflection_user_prompt_content = self.reflection_prompt_template.format(
+            requirement=requirement,
+            previous_code=previous_code if previous_code and previous_code.strip() else "# No previous code provided for this reflection.",
+            history_feedback=history_feedback if history_feedback and history_feedback.strip() else "# No specific feedback from the last round, or this is an initial plan.",
+            current_code=current_code
+        )
+        reflection_prompt_messages = [
+            reflection_system_message,
+            {"role": "user", "content": reflection_user_prompt_content}
+        ]
+
+        try:
+            responses = self.itf.run(
+                prompt=reflection_prompt_messages, 
+                majority_at=1, 
+                max_tokens=self.max_tokens, 
+                temperature=0.0,   
+                top_p=self.top_p 
+            )
+            reflected_code_raw = responses[0] 
+            reflected_code = self._extract_code_from_response(reflected_code_raw)
+
+        except Exception as e:
+            print(f"Error during Coder self-reflection: {e}")
+            return current_code 
+        
+        if not reflected_code or reflected_code.strip() == "":
+            return current_code 
+        return reflected_code
+
+    def _extract_code_from_response(self, response_text):
+        if not response_text:
+            return ""
+        
+        match = re.search(r"```python\n(.*?)\n```", response_text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        
+        return code_truncate(response_text)

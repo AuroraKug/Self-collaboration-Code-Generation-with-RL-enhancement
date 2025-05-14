@@ -22,37 +22,115 @@ class Session(object):
         is_init=True
         self.session_history["plan"] = plan
         code = ""
+        previous_code_for_reflection = "" 
 
         for i in range(self.max_round):
-
+            # Coder 生成初步代码
             naivecode = self.coder.implement(report, is_init)
-            method_name = find_method_name(naivecode)
-            if method_name:
-                code = naivecode
+            
+            # 如果初步代码生成成功，进行自我反思
+            if naivecode and naivecode.strip() != "" and naivecode != "error":
+                # 调用 Coder 的自我反思方法
+                reflected_code = self.coder.self_reflect_and_correct(
+                    requirement=self.requirement,
+                    current_code=naivecode,
+                    previous_code=previous_code_for_reflection,
+                    history_feedback=report
+                )
                 
+                # 处理反思后的代码
+                if reflected_code and reflected_code.strip() != "" and reflected_code != "error":
+                    method_name = find_method_name(reflected_code)
+                    if method_name:
+                        code = reflected_code  # 使用反思后的代码
+                    else:
+                        # 如果反思后的代码没有方法名，尝试使用原始代码
+                        method_name = find_method_name(naivecode)
+                        if method_name:
+                            code = naivecode
+                else:
+                    # 如果反思失败，使用原始代码
+                    method_name = find_method_name(naivecode)
+                    if method_name:
+                        code = naivecode
+            else:
+                # 如果初步代码生成失败，尝试获取方法名
+                method_name = find_method_name(naivecode)
+                if method_name:
+                    code = naivecode
+
+            # 处理代码为空的情况
             if code.strip() == "":
                 if i == 0:
-                    code = "error"
+                    code = "error"  # 第一轮就失败
                 else:
-                    code = self.session_history['Round_{}'.format(i-1)]["code"]
+                    # 使用上一轮的有效代码
+                    code = self.session_history.get(f'Round_{i-1}', {}).get("code", "error")
                 break
-            
+
+            if code == "error":
+                break
+
+            # 保存当前轮次的代码供下一轮反思使用
+            previous_code_for_reflection = code
+
+            # 最后一轮的处理
             if i == self.max_round-1:
-                self.session_history['Round_{}'.format(i)] = {"code": code}
+                self.session_history[f'Round_{i}'] = {
+                    "code": code,
+                    "naive_code": naivecode if 'naivecode' in locals() else "",
+                    "reflected_code": reflected_code if 'reflected_code' in locals() else ""
+                }
                 break
-            
+
+            # 运行测试
             tests = self.tester.test(code)
             test_report = code_truncate(tests)
-            answer_report = unsafe_execute(self.before_func+code+'\n'+test_report+'\n'+f'check({method_name})', '')
+            
+            # 确保使用最新的方法名
+            final_method_name = find_method_name(code)
+            if not final_method_name:
+                report = "Error: Could not find method name in the final code after reflection."
+                self.session_history[f'Round_{i}'] = {
+                    "code": code,
+                    "naive_code": naivecode if 'naivecode' in locals() else "",
+                    "reflected_code": reflected_code if 'reflected_code' in locals() else "",
+                    "report": report
+                }
+                if i < self.max_round - 1:
+                    is_init = False
+                    continue
+                else:
+                    break
+
+            # 执行代码测试
+            answer_report = unsafe_execute(
+                self.before_func + code + '\n' + test_report + '\n' + f'check({final_method_name})',
+                ''
+            )
             report = f'The compilation output of the preceding code is: {answer_report}'
 
             is_init = False
-            self.session_history['Round_{}'.format(i)] = {"code": code, "report": report}
+            self.session_history[f'Round_{i}'] = {
+                "code": code,
+                "naive_code": naivecode if 'naivecode' in locals() else "",
+                "reflected_code": reflected_code if 'reflected_code' in locals() else "",
+                "report": report
+            }
 
-            if (plan == "error") or (code == "error") or (report == "error"):
-                code = "error"
-                break
-            
+            # 处理错误情况
+            if (plan == "error" and i == 0) or \
+               (code == "error") or \
+               (report == "error" and answer_report != "Code Test Passed."):
+                if code != "error" and answer_report == "Code Test Passed.":
+                    pass
+                else:
+                    if i < self.max_round - 1:
+                        continue
+                    else:
+                        code = "error"
+                        break
+
             if answer_report == "Code Test Passed.":
                 break
 
