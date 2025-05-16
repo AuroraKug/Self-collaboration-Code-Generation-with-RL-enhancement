@@ -18,127 +18,129 @@ class Session(object):
     
     def run_session(self):
         plan = self.analyst.analyze()
-        report = plan
+        current_report_for_coder = plan # Renamed 'report' to avoid confusion in the loop
         is_init=True
         self.session_history["plan"] = plan
-        code = ""
-        previous_code_for_reflection = "" 
+        final_code_of_the_round = "" # Renamed 'code' to avoid confusion
+        previous_code_for_reflection = ""
 
         for i in range(self.max_round):
-            # Coder 生成初步代码
-            naivecode = self.coder.implement(report, is_init)
-            
-            # 如果初步代码生成成功，进行自我反思
-            if naivecode and naivecode.strip() != "" and naivecode != "error":
-                # 调用 Coder 的自我反思方法
-                reflected_code = self.coder.self_reflect_and_correct(
-                    requirement=self.requirement,
-                    current_code=naivecode,
-                    previous_code=previous_code_for_reflection,
-                    history_feedback=report
-                )
-                
-                # 处理反思后的代码
-                if reflected_code and reflected_code.strip() != "" and reflected_code != "error":
-                    method_name = find_method_name(reflected_code)
-                    if method_name:
-                        code = reflected_code  # 使用反思后的代码
-                    else:
-                        # 如果反思后的代码没有方法名，尝试使用原始代码
-                        method_name = find_method_name(naivecode)
-                        if method_name:
-                            code = naivecode
-                else:
-                    # 如果反思失败，使用原始代码
-                    method_name = find_method_name(naivecode)
-                    if method_name:
-                        code = naivecode
-            else:
-                # 如果初步代码生成失败，尝试获取方法名
-                method_name = find_method_name(naivecode)
-                if method_name:
-                    code = naivecode
+            # Coder generates a list of naive code candidates
+            naive_code_candidates = self.coder.implement(current_report_for_coder, is_init)
 
-            # 处理代码为空的情况
-            if code.strip() == "":
+            best_code_candidate_this_round = ""
+            # Initialize with a generic failure, to be updated by the first processed candidate or a passing one
+            best_answer_report_this_round = "error - no valid candidates processed"
+            chosen_naive_code_for_history = ""
+            chosen_reflected_code_for_history = ""
+            
+            # Handle cases where Coder implement returns an error or empty list directly
+            if not naive_code_candidates or naive_code_candidates == ["error"]:
                 if i == 0:
-                    code = "error"  # 第一轮就失败
+                    final_code_of_the_round = "error"
                 else:
-                    # 使用上一轮的有效代码
-                    code = self.session_history.get(f'Round_{i-1}', {}).get("code", "error")
-                break
+                    final_code_of_the_round = self.session_history.get(f'Round_{i-1}', {}).get("code", "error")
+                break # Break from max_round loop
 
-            if code == "error":
-                break
-
-            # 保存当前轮次的代码供下一轮反思使用
-            previous_code_for_reflection = code
-
-            # 最后一轮的处理
-            if i == self.max_round-1:
-                self.session_history[f'Round_{i}'] = {
-                    "code": code,
-                    "naive_code": naivecode if 'naivecode' in locals() else "",
-                    "reflected_code": reflected_code if 'reflected_code' in locals() else ""
-                }
-                break
-
-            # 运行测试
-            tests = self.tester.test(code)
-            test_report = code_truncate(tests)
-            
-            # 确保使用最新的方法名
-            final_method_name = find_method_name(code)
-            if not final_method_name:
-                report = "Error: Could not find method name in the final code after reflection."
-                self.session_history[f'Round_{i}'] = {
-                    "code": code,
-                    "naive_code": naivecode if 'naivecode' in locals() else "",
-                    "reflected_code": reflected_code if 'reflected_code' in locals() else "",
-                    "report": report
-                }
-                if i < self.max_round - 1:
-                    is_init = False
+            for naive_candidate in naive_code_candidates:
+                if not naive_candidate or naive_candidate.strip() == "" or naive_candidate == "error":
                     continue
+
+                reflected_candidate = self.coder.self_reflect_and_correct(
+                    requirement=self.requirement,
+                    current_code=naive_candidate,
+                    previous_code=previous_code_for_reflection,
+                    history_feedback=current_report_for_coder # Feedback from previous round or plan
+                )
+
+                current_code_to_test = reflected_candidate
+                if not current_code_to_test or current_code_to_test.strip() == "" or current_code_to_test == "error":
+                    current_code_to_test = naive_candidate # Fallback to naive if reflection fails
+                
+                if not current_code_to_test or current_code_to_test.strip() == "" or current_code_to_test == "error":
+                    continue # Skip this candidate if still bad
+
+                method_name = find_method_name(current_code_to_test)
+                if not method_name:
+                    # If this is the first candidate being processed and it has no method name,
+                    # capture its state for potential use if no other candidate works out.
+                    if best_code_candidate_this_round == "":
+                        best_code_candidate_this_round = current_code_to_test # Or an error marker
+                        best_answer_report_this_round = "error - no method name found in candidate"
+                        chosen_naive_code_for_history = naive_candidate
+                        chosen_reflected_code_for_history = reflected_candidate
+                    continue # Try next candidate
+
+                tests = self.tester.test(current_code_to_test)
+                test_report_str = code_truncate(tests)
+                
+                current_answer_report = unsafe_execute(
+                    self.before_func + current_code_to_test + '\n' + test_report_str + '\n' + f'check({method_name})',
+                    ''
+                )
+
+                # If this is the first valid candidate being fully processed, its result becomes the current best
+                if best_code_candidate_this_round == "" or (best_answer_report_this_round != "Code Test Passed." and current_answer_report == "Code Test Passed.") :
+                    best_code_candidate_this_round = current_code_to_test
+                    best_answer_report_this_round = current_answer_report
+                    chosen_naive_code_for_history = naive_candidate
+                    chosen_reflected_code_for_history = reflected_candidate
+
+                if current_answer_report == "Code Test Passed.":
+                    break # Found a passing candidate, no need to check others in this round
+            
+            final_code_of_the_round = best_code_candidate_this_round
+
+            # If after checking all candidates, final_code_of_the_round is empty (e.g. all candidates were invalid before testing)
+            if not final_code_of_the_round.strip():
+                if i == 0:
+                    final_code_of_the_round = "error"
                 else:
-                    break
+                    final_code_of_the_round = self.session_history.get(f'Round_{i-1}', {}).get("code", "error")
+                # Update Coder history with this error status to prevent issues if it expects an assistant message
+                if final_code_of_the_round == "error":
+                    self.coder.history_message_append("error: no valid code generated", "assistant")
+                break
+            
+            if final_code_of_the_round == "error": # Propagated from previous checks
+                self.coder.history_message_append("error: no valid code generated", "assistant")
+                break
 
-            # 执行代码测试
-            answer_report = unsafe_execute(
-                self.before_func + code + '\n' + test_report + '\n' + f'check({final_method_name})',
-                ''
-            )
-            report = f'The compilation output of the preceding code is: {answer_report}'
+            # Add the chosen code to Coder's history for the next round
+            self.coder.history_message_append(final_code_of_the_round, "assistant")
+            previous_code_for_reflection = final_code_of_the_round
 
-            is_init = False
+            # Prepare report for the next round (or for session history if last round)
+            current_report_for_coder = f'The compilation output of the preceding code is: {best_answer_report_this_round}'
+
             self.session_history[f'Round_{i}'] = {
-                "code": code,
-                "naive_code": naivecode if 'naivecode' in locals() else "",
-                "reflected_code": reflected_code if 'reflected_code' in locals() else "",
-                "report": report
+                "code": final_code_of_the_round,
+                "report": current_report_for_coder,
+                "chosen_naive_code": chosen_naive_code_for_history,
+                "chosen_reflected_code": chosen_reflected_code_for_history,
+                "answer_report_of_chosen": best_answer_report_this_round
             }
 
-            # 处理错误情况
-            if (plan == "error" and i == 0) or \
-               (code == "error") or \
-               (report == "error" and answer_report != "Code Test Passed."):
-                if code != "error" and answer_report == "Code Test Passed.":
-                    pass
-                else:
-                    if i < self.max_round - 1:
-                        continue
-                    else:
-                        code = "error"
-                        break
-
-            if answer_report == "Code Test Passed.":
+            if i == self.max_round - 1: # Last round
                 break
+
+            if best_answer_report_this_round == "Code Test Passed.":
+                break
+            
+            # If the best answer report indicates a failure that should stop iteration (e.g. not a simple test fail)
+            # This part of logic might need to be more refined based on how `best_answer_report_this_round` signals critical errors
+            if "error" in best_answer_report_this_round.lower() and best_answer_report_this_round != "error - no valid candidates processed" and best_answer_report_this_round != "error - no method name found in candidate":
+                # Potentially break if it is a critical error beyond just test failures
+                # For now, we continue to allow iterative fixing unless it's a pass.
+                pass 
+
+            is_init = False
 
         self.analyst.itf.clear_history()
         self.coder.itf.clear_history()
         self.tester.itf.clear_history()
 
-        return code, self.session_history
+        return final_code_of_the_round, self.session_history
 
     def run_analyst_coder(self):
         plan = self.analyst.analyze()

@@ -8,7 +8,7 @@ def call_chatgpt(prompt, model='code-davinci-002', stop=None, temperature=0., to
         max_tokens=128, echo=False, majority_at=None):
     
     client = OpenAI(
-        api_key="sk-zQyTk2qgolkoolUf5NT4iCZMu7wAWslW1jiX1rYblFzOwD6l",
+        api_key=os.getenv("OPENAI_API_KEY"),
         base_url="https://www.dmxapi.com/v1"  # 添加中转节点
     )
     num_completions = majority_at if majority_at is not None else 1

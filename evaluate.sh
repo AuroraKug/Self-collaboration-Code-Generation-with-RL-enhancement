@@ -1,1 +1,1 @@
-python evaluate/all_evaluate.py --input_path humaneval_output_gpt-3.5-turbo-0301.jsonl
+python evaluate/all_evaluate.py --input_path hunmaneval_output_gpt-3.5-turbo_baseline.jsonl

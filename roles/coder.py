@@ -35,25 +35,42 @@ class Coder(object):
     def implement(self, report, is_init=False):
         self.construct_with_report(report, is_init)
         
+        naive_code_candidates = []
         try:
+            # responses will be a list of strings if self.majority > 1
             responses = self.itf.run(prompt=self.history_message, majority_at = self.majority, max_tokens=self.max_tokens, temperature=self.temperature, top_p=self.top_p)
         except Exception as e:
             print(e)
             print("implement fail")
             time.sleep(5)
-            return "error"
+            # Return an empty list or a list with an error marker if preferred
+            return ["error"] # Or simply return [] and let Session handle it
+
+        # Remove the user instruction message that was added by construct_with_report
+        # This prepares history for the next potential call or for Session to append the chosen assistant message.
+        if self.history_message and self.history_message[-1]["role"] == "user" and "INSTRUCTCODE" in self.history_message[-1]["content"]:
+            self.history_message.pop()
+            if self.history_message and self.history_message[-1]["role"] == "user" and ("INSTRUCTPLAN" in self.history_message[-1]["content"] or "INSTRUCTREPORT" in self.history_message[-1]["content"]):
+                 self.history_message.pop()
+
+
+        for response_text in responses:
+            if 'gpt' not in self.model:
+                # Attempt to handle the non-GPT model response format if necessary
+                # This part might need adjustment based on actual non-GPT model output for multiple completions
+                generation = response_text[response_text.find("def"):] if "def" in response_text else response_text
+                tem = [s for s in generation.split('\\n\\n') if 'def ' in s or s.startswith(' ') or 'class ' in s]
+                code = '\\n\\n'.join(tem).strip('```').strip()
+            else:
+                code = code_truncate(response_text)
+            
+            if code.strip(): # Add only non-empty code candidates
+                naive_code_candidates.append(code)
         
-        if 'gpt' not in self.model:
-            generation = responses[0][responses[0].find("def"):]
-            tem = [s for s in generation.split('\n\n') if 'def ' in s or s[:1] == ' ']
-            code = '\n\n'.join(tem).strip('```').strip()
-        else:
-            code = code_truncate(responses[0])
-        
-        self.history_message = self.history_message[:-1]
-        self.history_message_append(code, "assistant")
-    
-        return code
+        if not naive_code_candidates: # If all responses resulted in empty code
+            return ["error"]
+
+        return naive_code_candidates
     
     def history_message_append(self, system_message, role="user"):
         self.history_message.append({
